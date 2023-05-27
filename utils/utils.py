@@ -12,7 +12,7 @@ import cv2
 import os
 from torch.utils.data import TensorDataset, DataLoader
 import matplotlib as plt
-%matplotlib inline
+import matplotlib.pyplot as plt
 import pandas as pd
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -29,41 +29,7 @@ import random
 
 
 
-def get_data(slice=1, train=True):
-    full_dataset = torchvision.datasets.MNIST(root=".",
-                                              train=train, 
-                                              transform=transforms.ToTensor(),
-                                              download=True)
-    #  equiv to slicing with [::slice] 
-    sub_dataset = torch.utils.data.Subset(
-      full_dataset, indices=range(0, len(full_dataset), slice))
-    
-    return sub_dataset
 
-
-def make_loader(dataset, batch_size):
-    loader = torch.utils.data.DataLoader(dataset=dataset,
-                                         batch_size=batch_size, 
-                                         shuffle=True,
-                                         pin_memory=True, num_workers=2)
-    return loader
-
-
-def make(config, device="cuda"):
-    # Make the data
-    train, test = get_data(train=True), get_data(train=False)
-    train_loader = make_loader(train, batch_size=config.batch_size)
-    test_loader = make_loader(test, batch_size=config.batch_size)
-
-    # Make the model
-    model = ConvNet(config.kernels, config.classes).to(device)
-
-    # Make the loss and optimizer
-    criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(
-        model.parameters(), lr=config.learning_rate)
-    
-    return model, train_loader, test_loader, criterion, optimizer
 
 
 def loading_data_preparing(path):
@@ -91,7 +57,7 @@ def loading_data_preparing(path):
                 N_IDC.extend(negative_image_paths)
                 P_IDC.extend(positive_image_paths)
 
-    total_images = 50000  # Cambiado a 5000 para equilibrar las clases (2500 benignos y 2500 malignos)
+    total_images = total_images = 100000  # Cambiado a 5000 para equilibrar las clases (2500 benignos y 2500 malignos)
 
     n_img_arr = np.zeros(shape=(total_images, 50, 50, 3), dtype=np.float32)
     p_img_arr = np.zeros(shape=(total_images, 50, 50, 3), dtype=np.float32)
@@ -195,3 +161,138 @@ def plotting_loses (losses, hist):
 
     plt.show()
 
+def evaluate_ontestset(X_test, y_test, batch_size, model, device, criterion):
+    test_dataset = TensorDataset(torch.from_numpy(X_test).float().permute(0, 3, 1, 2), torch.from_numpy(y_test).long())
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    test_loss, test_accuracy = evaluate(model, device, test_loader, criterion)
+
+    print('Test Loss: {:.4f}, Test Accuracy: {:.2f}%'.format(test_loss, test_accuracy))
+    return test_loader
+
+
+def visualizing_results (test_loader, device, model, N_IDC, P_IDC):
+    list_img_names = []
+
+    counter = 0
+    for i, (inputs, labels) in enumerate(test_loader):
+        inputs = inputs.to(device)
+        labels = labels.to(device)
+
+        with torch.no_grad():
+            outputs = model(inputs)
+            _, preds = torch.max(outputs, 1)
+
+        for j in range(inputs.size(0)):
+            # Obtener el nombre de la imagen
+            image_index = i * test_loader.batch_size + j
+            image_path = N_IDC[image_index] if preds[j].item() == 0 else P_IDC[image_index]
+            image_name = os.path.basename(image_path)
+            print("Nombre de la imagen: {}".format(image_name))
+            list_img_names.append(image_name)
+            # Loading and showing the image
+            image = inputs[j].permute(1, 2, 0).cpu().numpy()
+
+            # Normalizing the image
+            image = (image - image.min()) / (image.max() - image.min())
+
+            
+            plt.figure()
+            plt.imshow(image)
+            plt.axis('off')
+            plt.show()
+            
+            # Print the prediction and the correct label
+            prediction = preds[j].item()
+            correct_label = labels[j].item()
+            print("Predicción: {}, Etiqueta correcta: {}".format(prediction, correct_label), "\n")
+    return list_img_names
+
+def get_cancer_dataframe(base_path, patient_id, cancer_id):
+    path = os.path.join(base_path, patient_id, cancer_id)
+    files = os.listdir(path)
+    dataframe = pd.DataFrame(files, columns=["filename"])
+    path_names = [os.path.join(path, filename) for filename in dataframe.filename.values]
+    dataframe = dataframe.filename.str.rsplit("_", n=4, expand=True)
+    dataframe.loc[:, "target"] = np.int(cancer_id)
+    dataframe.loc[:, "path"] = path_names
+    dataframe = dataframe.drop([0, 1, 4], axis=1)
+    dataframe = dataframe.rename({2: "x", 3: "y"}, axis=1)
+    dataframe.loc[:, "x"] = dataframe.loc[:,"x"].str.replace("x", "", case=False).astype(np.int)
+    dataframe.loc[:, "y"] = dataframe.loc[:,"y"].str.replace("y", "", case=False).astype(np.int)
+    return dataframe
+
+def get_patient_dataframe(base_path, patient_id):
+    df_0 = get_cancer_dataframe(base_path,patient_id, "0")
+    df_1 = get_cancer_dataframe(base_path, patient_id, "1")
+    patient_df = pd.concat([df_0, df_1], ignore_index=True)
+    return patient_df
+
+
+def visualise_breast_tissue_base(base_path, patient_id, pred_df=None):
+    example_df = get_patient_dataframe(base_path, patient_id)
+    max_point = [example_df.y.max()-1, example_df.x.max()-1]
+    grid = 255*np.ones(shape=(max_point[0] + 50, max_point[1] + 50, 3)).astype(np.uint8)
+    mask = 255*np.ones(shape=(max_point[0] + 50, max_point[1] + 50, 3)).astype(np.uint8)
+    if pred_df is not None:
+        patient_df = pred_df[pred_df.patient_id == patient_id].copy()
+    mask_proba = np.zeros(shape=(max_point[0] + 50, max_point[1] + 50, 1)).astype(np.float)
+    
+    broken_patches = []
+    for n in range(len(example_df)):
+        try:
+            image = imread(example_df.path.values[n])
+            target = example_df.target.values[n]
+            x_coord = np.int(example_df.x.values[n])
+            y_coord = np.int(example_df.y.values[n])
+            x_start = x_coord - 1
+            y_start = y_coord - 1
+            x_end = x_start + 50
+            y_end = y_start + 50
+
+            grid[y_start:y_end, x_start:x_end] = image
+            if target == 1:
+                mask[y_start:y_end, x_start:x_end, 0] = 250
+                mask[y_start:y_end, x_start:x_end, 1] = 0
+                mask[y_start:y_end, x_start:x_end, 2] = 0
+            if pred_df is not None:
+                proba = patient_df[(patient_df.x==x_coord) & (patient_df.y==y_coord)].proba
+                mask_proba[y_start:y_end, x_start:x_end, 0] = np.float(proba)
+
+        except ValueError:
+            broken_patches.append(example_df.path.values[n])
+    
+    return grid, mask, broken_patches, mask_proba
+
+
+def visualise_breast_tissue(base_path, patient_id):
+    grid, mask, broken_patches,_ = visualise_breast_tissue_base(base_path, patient_id)
+
+    fig, ax = plt.subplots(1,2,figsize=(20,10))
+    ax[0].imshow(grid, alpha=0.9)
+    ax[1].imshow(mask, alpha=0.8)
+    ax[1].imshow(grid, alpha=0.7)
+    ax[0].grid(False)
+    ax[1].grid(False)
+    for m in range(2):
+        ax[m].set_xlabel("X-coord")
+        ax[m].set_ylabel("Y-coord")
+    ax[0].set_title("Breast tissue slice of patient: " + patient_id)
+    ax[1].set_title("Cancer tissue colored red \n of patient: " + patient_id)
+
+    plt.show()
+
+
+def visualise_breast_tissue_binary(base_path, patient_id):
+        
+    fig, ax = plt.subplots(1, 1)
+
+    example_df = get_patient_dataframe(base_path, patient_id)
+
+    ax.scatter(example_df.x.values, example_df.y.values, c=example_df.target.values, cmap="coolwarm", s=20)
+    ax.set_title("Patient " + patient_id)
+    ax.set_xlabel("X coord")
+    ax.set_ylabel("Y coord")
+    ax.set_aspect('equal')  # Set aspect ratio to 'equal' to preserve original orientation
+    ax.invert_yaxis()  # Reverse the y-axis direction
+
+    plt.show()
