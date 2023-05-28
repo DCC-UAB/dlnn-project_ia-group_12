@@ -27,6 +27,8 @@ import time
 import copy
 import random
 from matplotlib.pyplot import subplots
+from torchvision import datasets, models, transforms
+
 
 
 
@@ -101,6 +103,22 @@ def train(model, device, train_loader, optimizer, criterion):
     train_loss = running_loss / len(train_loader)
     return train_loss
 
+
+def train_logits (model, device, train_loader, optimizer, criterion):
+    model.train()
+    running_loss = 0.0
+    for batch_idx, (data, target) in enumerate(train_loader):
+        data, target = data.to(device), target.to(device)
+        optimizer.zero_grad()
+        output = model(data)
+        loss = criterion(output, target.unsqueeze(1))
+        loss.backward()
+        optimizer.step()
+        running_loss += loss.item()
+    train_loss = running_loss / len(train_loader)
+    return train_loss
+
+
 def evaluate(model, device, val_loader, criterion):
     model.eval()
     val_loss = 0.0
@@ -115,6 +133,23 @@ def evaluate(model, device, val_loader, criterion):
     val_loss /= len(val_loader)
     accuracy = 100.0 * correct / len(val_loader.dataset)
     return val_loss, accuracy
+
+
+def evaluate_logits(model, device, val_loader, criterion):
+    model.eval()
+    val_loss = 0.0
+    correct = 0
+    with torch.no_grad():
+        for data, target in val_loader:
+            data, target = data.to(device), target.to(device)
+            output = model(data)
+            val_loss += criterion(output, target.unsqueeze(1)).item()
+            pred = (output > 0.0).long()
+            correct += pred.eq(target.view_as(pred)).sum().item()
+    val_loss /= len(val_loader)
+    accuracy = 100.0 * correct / len(val_loader.dataset)
+    return val_loss, accuracy
+
 
 def training_model(model, device, criterion, optimizer,X_train, y_train, X_val, y_val):
     batch_size = 32  # Define the batch size
@@ -138,7 +173,7 @@ def training_model(model, device, criterion, optimizer,X_train, y_train, X_val, 
 
         losses["train"].append(train_loss)
         losses["val"].append(val_loss)
-        hist["train"].append(tr_accuracy)
+        hist["train"].append(val_accuracy)
         hist["val"].append(val_accuracy)
 
         print('Epoch: {:02d}, Train Loss: {:.4f}, Val Loss: {:.4f}, Val Accuracy: {:.2f}%'.format(
@@ -148,6 +183,41 @@ def training_model(model, device, criterion, optimizer,X_train, y_train, X_val, 
     model.load_state_dict(torch.load('best_model.pt'))
 
     return losses, hist
+
+
+def training_model_logits(model, device, criterion, optimizer,X_train, y_train, X_val, y_val):
+    batch_size = 32  # Define the batch size
+    train_dataset = TensorDataset(torch.from_numpy(X_train).float().permute(0, 3, 1, 2), torch.from_numpy(y_train).long())
+    val_dataset = TensorDataset(torch.from_numpy(X_val).float().permute(0, 3, 1, 2), torch.from_numpy(y_val).long())
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+
+    num_epochs = 40
+    best_val_loss = float('inf')
+    losses = {"train": [], "val": []}
+    hist = {"train": [], "val": []}
+
+    for epoch in range(num_epochs):
+        train_loss = train_logits(model, device, train_loader, optimizer, criterion)
+        val_loss, val_accuracy = evaluate_logits(model, device, val_loader, criterion)
+
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            torch.save(model.state_dict(), 'best_model.pt')
+
+        losses["train"].append(train_loss)
+        losses["val"].append(val_loss)
+        hist["train"].append(val_accuracy)
+        hist["val"].append(val_accuracy)
+
+        print('Epoch: {:02d}, Train Loss: {:.4f}, Val Loss: {:.4f}, Val Accuracy: {:.2f}%'.format(
+            epoch, train_loss, val_loss, val_accuracy))
+
+    # Load the best model
+    model.load_state_dict(torch.load('best_model.pt'))
+
+    return losses, hist
+
 
 def plotting_loses (losses, hist):
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
@@ -170,6 +240,13 @@ def evaluate_ontestset(X_test, y_test, batch_size, model, device, criterion):
     print('Test Loss: {:.4f}, Test Accuracy: {:.2f}%'.format(test_loss, test_accuracy))
     return test_loader
 
+def evaluate_ontestset_logits(X_test, y_test, batch_size, model, device, criterion):
+    test_dataset = TensorDataset(torch.from_numpy(X_test).float().permute(0, 3, 1, 2), torch.from_numpy(y_test).long())
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    test_loss, test_accuracy = evaluate_logits(model, device, test_loader, criterion)
+
+    print('Test Loss: {:.4f}, Test Accuracy: {:.2f}%'.format(test_loss, test_accuracy))
+    return test_loader
 
 import random
 
@@ -314,3 +391,137 @@ def visualise_breast_tissue_binary(base_path, patient_id):
     ax.invert_yaxis()  # Reverse the y-axis direction
 
     plt.show()
+
+
+def initialize_data(input_size):
+    data_transforms = {
+        'train': transforms.Compose([
+            transforms.RandomResizedCrop(input_size),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        ]),
+        'val': transforms.Compose([
+            transforms.Resize(input_size),
+            transforms.CenterCrop(input_size),
+            transforms.ToTensor(),
+            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        ]),
+        'test': transforms.Compose([
+            transforms.Resize(input_size),
+            transforms.CenterCrop(input_size),
+            transforms.ToTensor(),
+            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        ]),
+    }
+    
+    print("Initializing Datasets and Dataloaders...")
+    return data_transforms
+
+
+def create_dataloaders(main_folder, data_transforms, subset_percentage=0.3, batch_size=8):
+    # Create training and validation datasets
+    image_datasets = {x: datasets.ImageFolder(os.path.join(main_folder, x), data_transforms[x]) for x in ['train', 'val', 'test']}
+
+    # Generate indices for the subset
+    subset_indices_train = torch.randperm(len(image_datasets['train']))[:int(subset_percentage * len(image_datasets['train']))]
+    subset_indices_val = torch.randperm(len(image_datasets['val']))[:int(subset_percentage * len(image_datasets['val']))]
+    subset_indices_test = torch.randperm(len(image_datasets['test']))[:int(subset_percentage * len(image_datasets['test']))]
+
+    # Create subsets
+    train_data_subset = torch.utils.data.Subset(image_datasets['train'], subset_indices_train)
+    val_data_subset = torch.utils.data.Subset(image_datasets['val'], subset_indices_val)
+    test_data_subset = torch.utils.data.Subset(image_datasets['test'], subset_indices_test)
+
+    # Create training and validation dataloaders
+    dataloaders_dict = {
+        'train': torch.utils.data.DataLoader(train_data_subset, batch_size=batch_size, shuffle=True, num_workers=4),
+        'val': torch.utils.data.DataLoader(val_data_subset, batch_size=batch_size, shuffle=True, num_workers=4),
+        'test': torch.utils.data.DataLoader(test_data_subset, batch_size=batch_size, shuffle=True, num_workers=4),
+    }
+
+    return  dataloaders_dict
+
+
+def train_modelresnet(device, model, dataloaders, criterion, optimizer, num_epochs=25):
+    since = time.time()
+
+    acc_history = {"train": [], "val": []}
+    losses = {"train": [], "val": []}
+
+    # we will keep a copy of the best weights so far according to validation accuracy
+    best_model_wts = copy.deepcopy(model.state_dict())
+    best_acc = 0.0
+
+    for epoch in range(num_epochs):
+        print('Epoch {}/{}'.format(epoch, num_epochs - 1))
+        print('-' * 10)
+
+        # Each epoch has a training and validation phase
+        for phase in ['train', 'val']:
+            if phase == 'train':
+                model.train()  # Set model to training mode
+            else:
+                model.eval()   # Set model to evaluate mode
+
+            running_loss = 0.0
+            running_corrects = 0
+
+            # Iterate over data.
+            for inputs, labels in dataloaders[phase]:
+                inputs = inputs.to(device)
+                labels = labels.to(device)
+
+                # zero the parameter gradients
+                optimizer.zero_grad()
+
+                # forward
+                # track history if only in train
+                with torch.set_grad_enabled(phase == 'train'):
+                    # Get model outputs and calculate loss
+                    outputs = model(inputs)
+                    loss = criterion(outputs, labels)
+                    losses[phase].append(loss.item())
+
+                    _, preds = torch.max(outputs, 1)
+
+                    # backward + optimize only if in training phase
+                    if phase == 'train':
+                        loss.backward()
+                        optimizer.step()
+
+                # statistics
+                running_loss += loss.item() * inputs.size(0)
+                running_corrects += torch.sum(preds == labels.data).cpu().numpy()
+
+            epoch_loss = running_loss / len(dataloaders[phase].dataset)
+            epoch_acc = running_corrects / len(dataloaders[phase].dataset)
+
+            print('{} Loss: {:.4f} Acc: {:.4f}'.format(phase, epoch_loss, epoch_acc))
+
+            # deep copy the model
+            if phase == 'val' and epoch_acc > best_acc:
+                best_acc = epoch_acc
+                best_model_wts = copy.deepcopy(model.state_dict())
+            
+            acc_history[phase].append(epoch_acc)
+
+        print()
+
+    time_elapsed = time.time() - since
+    print('Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
+    print('Best val Acc: {:4f}'.format(best_acc))
+
+    # load best model weights
+    model.load_state_dict(best_model_wts)
+    return model, acc_history, losses
+
+def initialize_resnet(num_classes):
+    # Resnet18 
+    model = models.resnet18()
+    
+    model.fc = nn.Linear(512, num_classes)
+    
+    input_size = 224
+        
+    return model, input_size
