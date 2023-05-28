@@ -44,8 +44,8 @@ python main.py
 
 ## Contributors
 Write here the name and UAB mail of the group members
-Paula Feliu Criado, p.feliu12@gmail.com
-Roger Garcia, 
+Paula Feliu Criado, 1630423@uab.cat
+Roger Garcia, 1633372@uab.cat
 Montserrat Farres,
 
 Xarxes Neuronals i Aprenentatge Profund
