@@ -24,7 +24,6 @@ In conclusion, this project successfully applied deep learning techniques to cla
 In summary, the project achieved its objectives and presented a comprehensive evaluation of various deep learning models for mammography image classification, paving the way for potential advancements in tumor detection in medical imaging.
 
 
-\n
 ## Code structure
 You must create as many folders as you consider. You can use the proposed structure or replace it by the one in the base code that you use as starting point. Do not forget to add Markdown files as needed to explain well the code and how to use it.
 
