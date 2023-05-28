@@ -47,7 +47,7 @@ python main.py
 Write here the name and UAB mail of the group members
 Paula Feliu Criado, 1630423@uab.cat
 Roger Garcia, 1633372@uab.cat
-Montserrat Farres,
+Montserrat Farres, 1636040@uab.cat
 
 Xarxes Neuronals i Aprenentatge Profund
 Grau de Intel·ligència Artificial, 
