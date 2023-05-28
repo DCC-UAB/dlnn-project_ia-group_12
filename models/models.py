@@ -1,5 +1,6 @@
 import torch.nn as nn
 import torch.nn.functional as F
+import torch
 
 
 # Conventional and convolutional neural network
@@ -84,7 +85,7 @@ class FocalLoss(nn.Module):
 
     def forward(self, input, target):
         ce_loss = F.cross_entropy(input, target, reduction='none')
-        pt = nn.exp(-ce_loss)
+        pt = torch.exp(-ce_loss)
         focal_loss = ((1 - pt) ** self.gamma) * ce_loss
         if self.alpha is not None:
             focal_loss = self.alpha * focal_loss
