@@ -26,6 +26,7 @@ from os import listdir
 import time
 import copy
 import random
+from matplotlib.pyplot import subplots
 
 
 
@@ -137,7 +138,7 @@ def training_model(model, device, criterion, optimizer,X_train, y_train, X_val, 
 
         losses["train"].append(train_loss)
         losses["val"].append(val_loss)
-        hist["train"].append(val_accuracy)
+        hist["train"].append(tr_accuracy)
         hist["val"].append(val_accuracy)
 
         print('Epoch: {:02d}, Train Loss: {:.4f}, Val Loss: {:.4f}, Val Accuracy: {:.2f}%'.format(
@@ -170,8 +171,13 @@ def evaluate_ontestset(X_test, y_test, batch_size, model, device, criterion):
     return test_loader
 
 
-def visualizing_results (test_loader, device, model, N_IDC, P_IDC):
+import random
+
+def visualizing_results(test_loader, device, model, N_IDC, P_IDC, num_images):
     list_img_names = []
+
+    indices = list(range(len(N_IDC)))
+    random.shuffle(indices)
 
     counter = 0
     for i, (inputs, labels) in enumerate(test_loader):
@@ -183,29 +189,41 @@ def visualizing_results (test_loader, device, model, N_IDC, P_IDC):
             _, preds = torch.max(outputs, 1)
 
         for j in range(inputs.size(0)):
-            # Obtener el nombre de la imagen
-            image_index = i * test_loader.batch_size + j
-            image_path = N_IDC[image_index] if preds[j].item() == 0 else P_IDC[image_index]
+            if counter >= num_images:
+                # If the desired number of images has been printed, exit the loop
+                break
+
+            index = indices[counter]
+            image_path = N_IDC[index] if preds[j].item() == 0 else P_IDC[index]
             image_name = os.path.basename(image_path)
             print("Nombre de la imagen: {}".format(image_name))
             list_img_names.append(image_name)
+            
             # Loading and showing the image
             image = inputs[j].permute(1, 2, 0).cpu().numpy()
 
             # Normalizing the image
             image = (image - image.min()) / (image.max() - image.min())
 
-            
             plt.figure()
             plt.imshow(image)
             plt.axis('off')
             plt.show()
-            
+
             # Print the prediction and the correct label
             prediction = preds[j].item()
             correct_label = labels[j].item()
             print("Predicción: {}, Etiqueta correcta: {}".format(prediction, correct_label), "\n")
+
+            counter += 1
+
+        if counter >= num_images:
+            # If the desired number of images has been printed, exit the loop
+            break
+
     return list_img_names
+
+
 
 def get_cancer_dataframe(base_path, patient_id, cancer_id):
     path = os.path.join(base_path, patient_id, cancer_id)
