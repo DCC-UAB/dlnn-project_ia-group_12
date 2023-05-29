@@ -25,7 +25,12 @@ In summary, the project achieved its objectives and presented a comprehensive ev
 
 
 ## Code structure
-You must create as many folders as you consider. You can use the proposed structure or replace it by the one in the base code that you use as starting point. Do not forget to add Markdown files as needed to explain well the code and how to use it.
+The code has been structured in the following way:
+- 1 Models folder, in this folder are stored the different models created. In our case there are only two different CNNs and the class of focal loss. It is also important to be pointed that in the execution some pre-trained models have been used that are not defined in this folder.
+
+- 2 Utils folder, in this second folder all different functions used in the code are defined in. Is a way to mantain the code clear and having all functions in the same space.
+
+- 3 ModelsExecution python notebook, this last file has the complete execution of the differentmodels and the explanations on the decision that have been taken along this project as well as evaluations.
 
 
 ## Example Code

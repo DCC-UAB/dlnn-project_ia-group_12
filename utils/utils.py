@@ -10,7 +10,7 @@ from tqdm import tqdm
 from tqdm import tqdm_notebook as tqdm
 import cv2
 import os
-from torch.utils.data import TensorDataset, DataLoader
+from torch.utils.data import TensorDataset, DataLoader, Subset
 import matplotlib as plt
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -493,6 +493,30 @@ def create_dataloaders(main_folder, data_transforms, subset_percentage=0.3, batc
     return  dataloaders_dict, image_datasets
 
 
+def create_dataloadersVIT(main_folder, data_transforms, subset_percentage=0.3, batch_size=8):
+    batch_size = 8
+
+    # Crear datasets de entrenamiento y validación
+    image_datasets = {x: datasets.ImageFolder(os.path.join(main_folder, x), data_transforms[x]) for x in ['train', 'val', 'test']}
+
+
+    # Generar los índices para el subconjunto
+    subset_indices_train = torch.randperm(len(image_datasets['train']))[:int(0.03*len(image_datasets['train']))]
+    subset_indices_val = torch.randperm(len(image_datasets['val']))[:int(0.03*len(image_datasets['val']))]
+
+    # Crear subconjuntos
+    train_data_subset = Subset(image_datasets['train'], subset_indices_train)
+    val_data_subset = Subset(image_datasets['val'], subset_indices_val)
+
+
+    # Crear dataloaders de entrenamiento y validación
+    dataloaders_dict = {
+        'train': DataLoader(train_data_subset, batch_size=batch_size, shuffle=True, num_workers=4),
+        'val': DataLoader(val_data_subset, batch_size=batch_size, shuffle=True, num_workers=4)
+    }
+
+    return dataloaders_dict, image_datasets
+
 def train_modelresnet(device, model, dataloaders, criterion, optimizer, num_epochs=25):
     since = time.time()
 
@@ -663,5 +687,67 @@ def train_modelMOBILNET(device, model, dataloaders, criterion, optimizer, num_ep
     print('Best val Acc: {:4f}'.format(best_acc))
 
     # load best model weights
+    model.load_state_dict(best_model_wts)
+    return model, acc_history, losses
+
+def train_modelVit(device, model, dataloaders, criterion, optimizer, num_epochs=25):
+    since = time.time()
+
+    acc_history = {"train": [], "val": []}
+    losses = {"train": [], "val": []}
+
+    best_acc = 0.0
+    best_model_wts = None
+
+    for epoch in range(num_epochs):
+        print('Epoch {}/{}'.format(epoch, num_epochs - 1))
+        print('-' * 10)
+
+        for phase in ['train', 'val']:
+            if phase == 'train':
+                model.train()
+            else:
+                model.eval()
+
+            running_loss = 0.0
+            running_corrects = 0
+
+            for inputs, labels in dataloaders[phase]:
+                inputs = inputs.to(device)
+                labels = labels.to(device)
+
+                optimizer.zero_grad()
+
+                with torch.set_grad_enabled(phase == 'train'):
+                    outputs = model(inputs)
+                    _, preds = torch.max(outputs, 1)
+                    loss = criterion(outputs, labels)
+
+                    if phase == 'train':
+                        loss.backward()
+                        optimizer.step()
+
+                running_loss += loss.item() * inputs.size(0)
+                running_corrects += torch.sum(preds == labels.data).item()
+
+            epoch_loss = running_loss / len(dataloaders[phase].dataset)
+            epoch_acc = running_corrects / len(dataloaders[phase].dataset)
+
+            print('{} Loss: {:.4f} Acc: {:.4f}'.format(phase, epoch_loss, epoch_acc))
+
+            
+            if phase == 'val' and epoch_acc > best_acc:
+                best_acc = epoch_acc
+                best_model_wts = model.state_dict()
+                best_model_wts = copy.deepcopy(model.state_dict())
+
+            acc_history[phase].append(epoch_acc)
+            
+        print()
+
+    time_elapsed = time.time() - since
+    print('Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
+    print('Best val Acc: {:4f}'.format(best_acc))
+
     model.load_state_dict(best_model_wts)
     return model, acc_history, losses
