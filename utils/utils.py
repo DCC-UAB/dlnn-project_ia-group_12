@@ -187,8 +187,8 @@ def training_model(model, device, criterion, optimizer,X_train, y_train, X_val, 
 
 def training_model_logits(model, device, criterion, optimizer,X_train, y_train, X_val, y_val):
     batch_size = 32  # Define the batch size
-    train_dataset = TensorDataset(torch.from_numpy(X_train).float().permute(0, 3, 1, 2), torch.from_numpy(y_train).long())
-    val_dataset = TensorDataset(torch.from_numpy(X_val).float().permute(0, 3, 1, 2), torch.from_numpy(y_val).long())
+    train_dataset = TensorDataset(torch.from_numpy(X_train).float().permute(0, 3, 1, 2), torch.from_numpy(y_train).float())
+    val_dataset = TensorDataset(torch.from_numpy(X_val).float().permute(0, 3, 1, 2), torch.from_numpy(y_val).float())
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
@@ -241,12 +241,37 @@ def evaluate_ontestset(X_test, y_test, batch_size, model, device, criterion):
     return test_loader
 
 def evaluate_ontestset_logits(X_test, y_test, batch_size, model, device, criterion):
-    test_dataset = TensorDataset(torch.from_numpy(X_test).float().permute(0, 3, 1, 2), torch.from_numpy(y_test).long())
+    test_dataset = TensorDataset(torch.from_numpy(X_test).float().permute(0, 3, 1, 2), torch.from_numpy(y_test).float())
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
     test_loss, test_accuracy = evaluate_logits(model, device, test_loader, criterion)
 
     print('Test Loss: {:.4f}, Test Accuracy: {:.2f}%'.format(test_loss, test_accuracy))
     return test_loader
+
+
+def evaluate_modelRESNET(device, criterion, model, dataloader):
+    model.eval()
+    running_loss = 0.0
+    running_corrects = 0
+
+    with torch.no_grad():
+        for inputs, labels in dataloader:
+            inputs = inputs.to(device)
+            labels = labels.to(device)
+
+            outputs = model(inputs)
+            loss = criterion(outputs, labels)
+            running_loss += loss.item() * inputs.size(0)
+
+            _, preds = torch.max(outputs, 1)
+            running_corrects += torch.sum(preds == labels.data).item()
+
+    loss = running_loss / len(dataloader.dataset)
+    accuracy = running_corrects / len(dataloader.dataset)
+
+    return loss, accuracy
+
+
 
 import random
 
@@ -440,7 +465,7 @@ def create_dataloaders(main_folder, data_transforms, subset_percentage=0.3, batc
         'test': torch.utils.data.DataLoader(test_data_subset, batch_size=batch_size, shuffle=True, num_workers=4),
     }
 
-    return  dataloaders_dict
+    return  dataloaders_dict, image_datasets
 
 
 def train_modelresnet(device, model, dataloaders, criterion, optimizer, num_epochs=25):
