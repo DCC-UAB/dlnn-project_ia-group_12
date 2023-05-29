@@ -6,7 +6,7 @@ This report summarizes the deep learning project focused on classifying mammogra
 The data used to reproduce the code can be downloaded from here: 
 https://www.kaggle.com/datasets/paultimothymooney/breast-histopathology-images
 
-Another important fact about the data, also mentioned on the notebook, is that the three pre-tained models that have been used work on the same data but separated in three different folders for train, val and test. This three folders can be downloaded on the zip file called 'train_val_test.zip' that you will find in this repo.
+Another important fact about the data, also mentioned on the notebook, is that the three pre-tained models that have been used, work on the same data but separated in three different folders for train, val and test. This three folders can be downloaded on the zip file called 'train_val_test.zip' that you will find in this repo.
 
 
 ### Introduction:
