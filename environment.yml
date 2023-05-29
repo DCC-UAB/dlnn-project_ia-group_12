@@ -1,4 +1,4 @@
-name: Breast Cancer detection
+name: BreastCancerdetection_g12
 channels:
 - pytorch
 - defaults
