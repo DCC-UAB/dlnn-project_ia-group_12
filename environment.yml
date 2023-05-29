@@ -1,4 +1,4 @@
-name: xnap-example
+name: Breast Cancer detection
 channels:
 - pytorch
 - defaults
@@ -16,3 +16,4 @@ dependencies:
   - wandb
   - onnxruntime
   - ipykernel
+  - timm
