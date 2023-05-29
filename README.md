@@ -3,6 +3,12 @@
 ### Data:
 This report summarizes the deep learning project focused on classifying mammography images as either benign (0) or malignant (1) tumors. The dataset consists of many patches of images (complete mamographies) from different patients, organized into folders. Each patient's folder contains two subfolders: '0' for images without a malignant tumor and '1' for images with a malignant tumor. The primary objective of the project was to develop models using deep learning techniques, including convolutional neural networks (CNN), pretrained models (ResNet, MobileNet), and a transformer, to accurately classify the images.
 
+The data used to reproduce the code can be downloaded from here: 
+https://www.kaggle.com/datasets/paultimothymooney/breast-histopathology-images
+
+Another important fact about the data, also mentioned on the notebook, is that the three pre-tained models that have been used work on the same data but separated in three different folders for train, val and test. This three folders can be downloaded on the zip file called 'train_val_test.zip' that you will find in this repo.
+
+
 ### Introduction:
 The aim of this project was to classify mammography images based on the presence or absence of a malignant tumor. To achieve this objective, various deep learning models were implemented, including a CNN, pretrained models, and a transformer. Modifications were made to the models' parameters and architecture to improve their performance.
 
@@ -28,7 +34,7 @@ In summary, the project achieved its objectives and presented a comprehensive ev
 The code has been structured in the following way:
 - 1 Models folder, in this folder are stored the different models created. In our case there are only two different CNNs and the class of focal loss. It is also important to be pointed that in the execution some pre-trained models have been used that are not defined in this folder.
 
-- 2 Utils folder, in this second folder all different functions used in the code are defined in. Is a way to mantain the code clear and having all functions in the same space.
+- 2 Utils folder, in this second folder all different functions used in the code are defined in. Is a way to mantain the code clear and having all functions in the same space. They are also divided into small subgroups depending on the purpose of each function, they are separated by comments especifying the type of functions that you will find afterwards.
 
 - 3 ModelsExecution python notebook, this last file has the complete execution of the differentmodels and the explanations on the decision that have been taken along this project as well as evaluations.
 

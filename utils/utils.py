@@ -34,10 +34,10 @@ from sklearn.metrics import classification_report
 
 
 
-
+#Functions for data loading and preparation
 
 def loading_data_preparing(path):
-    root_dir =  path  # Ruta del directorio de imágenes
+    root_dir =  path  
 
     N_IDC = []
     P_IDC = []
@@ -61,7 +61,7 @@ def loading_data_preparing(path):
                 N_IDC.extend(negative_image_paths)
                 P_IDC.extend(positive_image_paths)
 
-    total_images = total_images = 100000  # Cambiado a 5000 para equilibrar las clases (2500 benignos y 2500 malignos)
+    total_images = total_images = 100000  
 
     n_img_arr = np.zeros(shape=(total_images, 50, 50, 3), dtype=np.float32)
     p_img_arr = np.zeros(shape=(total_images, 50, 50, 3), dtype=np.float32)
@@ -82,13 +82,103 @@ def loading_data_preparing(path):
     y = np.concatenate((label_p, label_n), axis=0)
     X, y = shuffle(X, y, random_state=0)
 
-    # probar --> y = to_categorical(y)
 
     X_train_val, X_test, y_train_val, y_test = train_test_split(X, y, test_size=0.1, random_state=42)
     X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val, test_size=0.2, random_state=42)
 
     return N_IDC, P_IDC, total_images, n_img_arr, p_img_arr, label_n, label_p, X, y, X_train, X_test, y_train, y_test, X_val, y_val
 
+
+def initialize_data(input_size):
+    data_transforms = {
+        'train': transforms.Compose([
+            transforms.RandomResizedCrop(input_size),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        ]),
+        'val': transforms.Compose([
+            transforms.Resize(input_size),
+            transforms.CenterCrop(input_size),
+            transforms.ToTensor(),
+            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        ]),
+        'test': transforms.Compose([
+            transforms.Resize(input_size),
+            transforms.CenterCrop(input_size),
+            transforms.ToTensor(),
+            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        ]),
+    }
+    
+    print("Initializing Datasets and Dataloaders...")
+    return data_transforms
+
+
+def create_dataloaders(main_folder, data_transforms, subset_percentage=0.3, batch_size=8):
+    image_datasets = {x: datasets.ImageFolder(os.path.join(main_folder, x), data_transforms[x]) for x in ['train', 'val', 'test']}
+
+    subset_indices_train = torch.randperm(len(image_datasets['train']))[:int(subset_percentage * len(image_datasets['train']))]
+    subset_indices_val = torch.randperm(len(image_datasets['val']))[:int(subset_percentage * len(image_datasets['val']))]
+    subset_indices_test = torch.randperm(len(image_datasets['test']))[:int(subset_percentage * len(image_datasets['test']))]
+
+    train_data_subset = torch.utils.data.Subset(image_datasets['train'], subset_indices_train)
+    val_data_subset = torch.utils.data.Subset(image_datasets['val'], subset_indices_val)
+    test_data_subset = torch.utils.data.Subset(image_datasets['test'], subset_indices_test)
+
+    dataloaders_dict = {
+        'train': torch.utils.data.DataLoader(train_data_subset, batch_size=batch_size, shuffle=True, num_workers=4),
+        'val': torch.utils.data.DataLoader(val_data_subset, batch_size=batch_size, shuffle=True, num_workers=4),
+        'test': torch.utils.data.DataLoader(test_data_subset, batch_size=batch_size, shuffle=True, num_workers=4),
+    }
+
+    return  dataloaders_dict, image_datasets
+
+
+def create_dataloadersVIT(main_folder, data_transforms, subset_percentage=0.3, batch_size=8):
+    batch_size = 8
+
+    image_datasets = {x: datasets.ImageFolder(os.path.join(main_folder, x), data_transforms[x]) for x in ['train', 'val', 'test']}
+
+
+    subset_indices_train = torch.randperm(len(image_datasets['train']))[:int(0.03*len(image_datasets['train']))]
+    subset_indices_val = torch.randperm(len(image_datasets['val']))[:int(0.03*len(image_datasets['val']))]
+
+    train_data_subset = Subset(image_datasets['train'], subset_indices_train)
+    val_data_subset = Subset(image_datasets['val'], subset_indices_val)
+
+
+    dataloaders_dict = {
+        'train': DataLoader(train_data_subset, batch_size=batch_size, shuffle=True, num_workers=4),
+        'val': DataLoader(val_data_subset, batch_size=batch_size, shuffle=True, num_workers=4)
+    }
+
+    return dataloaders_dict, image_datasets
+
+def initialize_resnet(num_classes):
+    model = models.resnet18()
+    
+    model.fc = nn.Linear(512, num_classes)
+    
+    input_size = 224
+        
+    return model, input_size
+
+
+def initialize_mobilnet(num_classes):
+    model = models.mobilenet_v2(pretrained = True)
+    
+    model.classifier = nn.Sequential(
+        nn.Dropout(0.2),
+        nn.Linear(1280, num_classes)
+    )
+    
+    input_size = 224
+        
+    return model, input_size
+
+
+#Training functions
 
 def train(model, device, train_loader, optimizer, criterion):
     model.train()
@@ -119,6 +209,264 @@ def train_logits (model, device, train_loader, optimizer, criterion):
     train_loss = running_loss / len(train_loader)
     return train_loss
 
+
+def training_model(model, device, criterion, optimizer,X_train, y_train, X_val, y_val):
+    batch_size = 32  
+    train_dataset = TensorDataset(torch.from_numpy(X_train).float().permute(0, 3, 1, 2), torch.from_numpy(y_train).long())
+    val_dataset = TensorDataset(torch.from_numpy(X_val).float().permute(0, 3, 1, 2), torch.from_numpy(y_val).long())
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+
+    num_epochs = 40
+    best_val_loss = float('inf')
+    losses = {"train": [], "val": []}
+    hist = {"train": [], "val": []}
+
+    for epoch in range(num_epochs):
+        train_loss = train(model, device, train_loader, optimizer, criterion)
+        val_loss, val_accuracy = evaluate(model, device, val_loader, criterion)
+
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            torch.save(model.state_dict(), 'best_model.pt')
+
+        losses["train"].append(train_loss)
+        losses["val"].append(val_loss)
+        hist["train"].append(val_accuracy)
+        hist["val"].append(val_accuracy)
+
+        print('Epoch: {:02d}, Train Loss: {:.4f}, Val Loss: {:.4f}, Val Accuracy: {:.2f}%'.format(
+            epoch, train_loss, val_loss, val_accuracy))
+
+    model.load_state_dict(torch.load('best_model.pt'))
+
+    return losses, hist
+
+
+def training_model_logits(model, device, criterion, optimizer,X_train, y_train, X_val, y_val):
+    batch_size = 32  
+    train_dataset = TensorDataset(torch.from_numpy(X_train).float().permute(0, 3, 1, 2), torch.from_numpy(y_train).float())
+    val_dataset = TensorDataset(torch.from_numpy(X_val).float().permute(0, 3, 1, 2), torch.from_numpy(y_val).float())
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+
+    num_epochs = 40
+    best_val_loss = float('inf')
+    losses = {"train": [], "val": []}
+    hist = {"train": [], "val": []}
+
+    for epoch in range(num_epochs):
+        train_loss = train_logits(model, device, train_loader, optimizer, criterion)
+        val_loss, val_accuracy = evaluate_logits(model, device, val_loader, criterion)
+
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            torch.save(model.state_dict(), 'best_model.pt')
+
+        losses["train"].append(train_loss)
+        losses["val"].append(val_loss)
+        hist["train"].append(val_accuracy)
+        hist["val"].append(val_accuracy)
+
+        print('Epoch: {:02d}, Train Loss: {:.4f}, Val Loss: {:.4f}, Val Accuracy: {:.2f}%'.format(
+            epoch, train_loss, val_loss, val_accuracy))
+
+    model.load_state_dict(torch.load('best_model.pt'))
+
+    return losses, hist
+
+
+def train_modelresnet(device, model, dataloaders, criterion, optimizer, num_epochs=25):
+    since = time.time()
+
+    acc_history = {"train": [], "val": []}
+    losses = {"train": [], "val": []}
+
+    best_model_wts = copy.deepcopy(model.state_dict())
+    best_acc = 0.0
+
+    for epoch in range(num_epochs):
+        print('Epoch {}/{}'.format(epoch, num_epochs - 1))
+        print('-' * 10)
+
+        for phase in ['train', 'val']:
+            if phase == 'train':
+                model.train()  
+            else:
+                model.eval()   
+
+            running_loss = 0.0
+            running_corrects = 0
+
+            for inputs, labels in dataloaders[phase]:
+                inputs = inputs.to(device)
+                labels = labels.to(device)
+
+                optimizer.zero_grad()
+
+                
+                with torch.set_grad_enabled(phase == 'train'):
+                    outputs = model(inputs)
+                    loss = criterion(outputs, labels)
+                    losses[phase].append(loss.item())
+
+                    _, preds = torch.max(outputs, 1)
+
+                    if phase == 'train':
+                        loss.backward()
+                        optimizer.step()
+
+                running_loss += loss.item() * inputs.size(0)
+                running_corrects += torch.sum(preds == labels.data).cpu().numpy()
+
+            epoch_loss = running_loss / len(dataloaders[phase].dataset)
+            epoch_acc = running_corrects / len(dataloaders[phase].dataset)
+
+            print('{} Loss: {:.4f} Acc: {:.4f}'.format(phase, epoch_loss, epoch_acc))
+
+            if phase == 'val' and epoch_acc > best_acc:
+                best_acc = epoch_acc
+                best_model_wts = copy.deepcopy(model.state_dict())
+            
+            acc_history[phase].append(epoch_acc)
+
+        print()
+
+    time_elapsed = time.time() - since
+    print('Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
+    print('Best val Acc: {:4f}'.format(best_acc))
+
+    model.load_state_dict(best_model_wts)
+    return model, acc_history, losses
+
+
+def train_modelMOBILNET(device, model, dataloaders, criterion, optimizer, num_epochs=25):
+    since = time.time()
+
+    acc_history = {"train": [], "val": []}
+    losses = {"train": [], "val": []}
+
+    best_model_wts = copy.deepcopy(model.state_dict())
+    best_acc = 0.0
+
+    for epoch in range(num_epochs):
+        print('Epoch {}/{}'.format(epoch, num_epochs - 1))
+        print('-' * 10)
+
+        for phase in ['train', 'val']:
+            if phase == 'train':
+                model.train()  
+            else:
+                model.eval()   
+
+            running_loss = 0.0
+            running_corrects = 0
+
+            for inputs, labels in dataloaders[phase]:
+                inputs = inputs.to(device)
+                labels = labels.to(device)
+
+                optimizer.zero_grad()
+
+                
+                with torch.set_grad_enabled(phase == 'train'):
+                    outputs = model(inputs)
+                    loss = criterion(outputs, labels)
+                    losses[phase].append(loss.item())
+
+                    preds = torch.argmax(outputs, dim=1)
+                    
+                    if phase == 'train':
+                        loss.backward()
+                        optimizer.step()
+
+                running_loss += loss.item() * inputs.size(0)
+                running_corrects += torch.sum(preds == labels.data).item() 
+
+            epoch_loss = running_loss / len(dataloaders[phase].dataset)
+            epoch_acc = running_corrects / len(dataloaders[phase].dataset)
+
+            print('{} Loss: {:.4f} Acc: {:.4f}'.format(phase, epoch_loss, epoch_acc))
+
+            if phase == 'val' and epoch_acc > best_acc:
+                best_acc = epoch_acc
+                best_model_wts = copy.deepcopy(model.state_dict())
+            
+            acc_history[phase].append(epoch_acc)
+
+        print()
+
+    time_elapsed = time.time() - since
+    print('Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
+    print('Best val Acc: {:4f}'.format(best_acc))
+
+    model.load_state_dict(best_model_wts)
+    return model, acc_history, losses
+
+def train_modelVit(device, model, dataloaders, criterion, optimizer, num_epochs=25):
+    since = time.time()
+
+    acc_history = {"train": [], "val": []}
+    losses = {"train": [], "val": []}
+
+    best_acc = 0.0
+    best_model_wts = None
+
+    for epoch in range(num_epochs):
+        print('Epoch {}/{}'.format(epoch, num_epochs - 1))
+        print('-' * 10)
+
+        for phase in ['train', 'val']:
+            if phase == 'train':
+                model.train()
+            else:
+                model.eval()
+
+            running_loss = 0.0
+            running_corrects = 0
+
+            for inputs, labels in dataloaders[phase]:
+                inputs = inputs.to(device)
+                labels = labels.to(device)
+
+                optimizer.zero_grad()
+
+                with torch.set_grad_enabled(phase == 'train'):
+                    outputs = model(inputs)
+                    _, preds = torch.max(outputs, 1)
+                    loss = criterion(outputs, labels)
+
+                    if phase == 'train':
+                        loss.backward()
+                        optimizer.step()
+
+                running_loss += loss.item() * inputs.size(0)
+                running_corrects += torch.sum(preds == labels.data).item()
+
+            epoch_loss = running_loss / len(dataloaders[phase].dataset)
+            epoch_acc = running_corrects / len(dataloaders[phase].dataset)
+
+            print('{} Loss: {:.4f} Acc: {:.4f}'.format(phase, epoch_loss, epoch_acc))
+
+            
+            if phase == 'val' and epoch_acc > best_acc:
+                best_acc = epoch_acc
+                best_model_wts = model.state_dict()
+                best_model_wts = copy.deepcopy(model.state_dict())
+
+            acc_history[phase].append(epoch_acc)
+            
+        print()
+
+    time_elapsed = time.time() - since
+    print('Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
+    print('Best val Acc: {:4f}'.format(best_acc))
+
+    model.load_state_dict(best_model_wts)
+    return model, acc_history, losses
+
+
+#Evaluating functions
 
 def evaluate(model, device, val_loader, criterion):
     model.eval()
@@ -151,104 +499,13 @@ def evaluate_logits(model, device, val_loader, criterion):
     accuracy = 100.0 * correct / len(val_loader.dataset)
     return val_loss, accuracy
 
-
-def training_model(model, device, criterion, optimizer,X_train, y_train, X_val, y_val):
-    batch_size = 32  # Define the batch size
-    train_dataset = TensorDataset(torch.from_numpy(X_train).float().permute(0, 3, 1, 2), torch.from_numpy(y_train).long())
-    val_dataset = TensorDataset(torch.from_numpy(X_val).float().permute(0, 3, 1, 2), torch.from_numpy(y_val).long())
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
-
-    num_epochs = 40
-    best_val_loss = float('inf')
-    losses = {"train": [], "val": []}
-    hist = {"train": [], "val": []}
-
-    for epoch in range(num_epochs):
-        train_loss = train(model, device, train_loader, optimizer, criterion)
-        val_loss, val_accuracy = evaluate(model, device, val_loader, criterion)
-
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            torch.save(model.state_dict(), 'best_model.pt')
-
-        losses["train"].append(train_loss)
-        losses["val"].append(val_loss)
-        hist["train"].append(val_accuracy)
-        hist["val"].append(val_accuracy)
-
-        print('Epoch: {:02d}, Train Loss: {:.4f}, Val Loss: {:.4f}, Val Accuracy: {:.2f}%'.format(
-            epoch, train_loss, val_loss, val_accuracy))
-
-    # Load the best model
-    model.load_state_dict(torch.load('best_model.pt'))
-
-    return losses, hist
-
-
-def training_model_logits(model, device, criterion, optimizer,X_train, y_train, X_val, y_val):
-    batch_size = 32  # Define the batch size
-    train_dataset = TensorDataset(torch.from_numpy(X_train).float().permute(0, 3, 1, 2), torch.from_numpy(y_train).float())
-    val_dataset = TensorDataset(torch.from_numpy(X_val).float().permute(0, 3, 1, 2), torch.from_numpy(y_val).float())
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
-
-    num_epochs = 40
-    best_val_loss = float('inf')
-    losses = {"train": [], "val": []}
-    hist = {"train": [], "val": []}
-
-    for epoch in range(num_epochs):
-        train_loss = train_logits(model, device, train_loader, optimizer, criterion)
-        val_loss, val_accuracy = evaluate_logits(model, device, val_loader, criterion)
-
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            torch.save(model.state_dict(), 'best_model.pt')
-
-        losses["train"].append(train_loss)
-        losses["val"].append(val_loss)
-        hist["train"].append(val_accuracy)
-        hist["val"].append(val_accuracy)
-
-        print('Epoch: {:02d}, Train Loss: {:.4f}, Val Loss: {:.4f}, Val Accuracy: {:.2f}%'.format(
-            epoch, train_loss, val_loss, val_accuracy))
-
-    # Load the best model
-    model.load_state_dict(torch.load('best_model.pt'))
-
-    return losses, hist
-
-
-def plotting_loses (losses, hist):
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
-
-    ax1.plot(losses["train"], label="training loss")
-    ax1.plot(losses["val"], label="validation loss")
-    ax1.legend()
-
-    ax2.plot(hist["train"], label="training accuracy")
-    ax2.plot(hist["val"], label="validation accuracy")
-    ax2.legend()
-
-    plt.show()
-
 def evaluate_ontestset(X_test, y_test, batch_size, model, device, criterion):
-    test_dataset = TensorDataset(torch.from_numpy(X_test).float().permute(0, 3, 1, 2), torch.from_numpy(y_test).long())
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
-    test_loss, test_accuracy = evaluate(model, device, test_loader, criterion)
-
-    print('Test Loss: {:.4f}, Test Accuracy: {:.2f}%'.format(test_loss, test_accuracy))
-    return test_loader
-
-def evaluate_ontestset2(X_test, y_test, batch_size, model, device, criterion):
     test_dataset = TensorDataset(torch.from_numpy(X_test).float().permute(0, 3, 1, 2), torch.from_numpy(y_test).long())
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
     test_loss, test_accuracy, y_true, y_pred = evaluate(model, device, test_loader, criterion)
 
     print('Test Loss: {:.4f}, Test Accuracy: {:.2f}%'.format(test_loss, test_accuracy))
 
-    # Calculate recall and F1 score
     recall = np.mean(y_true == y_pred)
     f1_score = 2 * (test_accuracy * recall) / (test_accuracy + recall)
 
@@ -290,11 +547,28 @@ def evaluate_modelRESNET(device, criterion, model, dataloader):
     loss = running_loss / len(dataloader.dataset)
     accuracy = running_corrects / len(dataloader.dataset)
     
-    # Compute recall and F1 score
     report = classification_report(true_labels, pred_labels)
     print("Classification Report:\n", report)
 
     return loss, accuracy
+
+
+
+#Plotting functions
+
+def plotting_loses (losses, hist):
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+
+    ax1.plot(losses["train"], label="training loss")
+    ax1.plot(losses["val"], label="validation loss")
+    ax1.legend()
+
+    ax2.plot(hist["train"], label="training accuracy")
+    ax2.plot(hist["val"], label="validation accuracy")
+    ax2.legend()
+
+    plt.show()
+
 
 
 
@@ -317,7 +591,6 @@ def visualizing_results(test_loader, device, model, N_IDC, P_IDC, num_images):
 
         for j in range(inputs.size(0)):
             if counter >= num_images:
-                # If the desired number of images has been printed, exit the loop
                 break
 
             index = indices[counter]
@@ -326,10 +599,8 @@ def visualizing_results(test_loader, device, model, N_IDC, P_IDC, num_images):
             print("Nombre de la imagen: {}".format(image_name))
             list_img_names.append(image_name)
             
-            # Loading and showing the image
             image = inputs[j].permute(1, 2, 0).cpu().numpy()
 
-            # Normalizing the image
             image = (image - image.min()) / (image.max() - image.min())
 
             plt.figure()
@@ -337,7 +608,6 @@ def visualizing_results(test_loader, device, model, N_IDC, P_IDC, num_images):
             plt.axis('off')
             plt.show()
 
-            # Print the prediction and the correct label
             prediction = preds[j].item()
             correct_label = labels[j].item()
             print("Predicción: {}, Etiqueta correcta: {}".format(prediction, correct_label), "\n")
@@ -345,7 +615,6 @@ def visualizing_results(test_loader, device, model, N_IDC, P_IDC, num_images):
             counter += 1
 
         if counter >= num_images:
-            # If the desired number of images has been printed, exit the loop
             break
 
     return list_img_names
@@ -437,317 +706,8 @@ def visualise_breast_tissue_binary(base_path, patient_id):
     ax.set_title("Patient " + patient_id)
     ax.set_xlabel("X coord")
     ax.set_ylabel("Y coord")
-    ax.set_aspect('equal')  # Set aspect ratio to 'equal' to preserve original orientation
-    ax.invert_yaxis()  # Reverse the y-axis direction
+    ax.set_aspect('equal')  
+    ax.invert_yaxis()  
 
     plt.show()
 
-
-def initialize_data(input_size):
-    data_transforms = {
-        'train': transforms.Compose([
-            transforms.RandomResizedCrop(input_size),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-        ]),
-        'val': transforms.Compose([
-            transforms.Resize(input_size),
-            transforms.CenterCrop(input_size),
-            transforms.ToTensor(),
-            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-        ]),
-        'test': transforms.Compose([
-            transforms.Resize(input_size),
-            transforms.CenterCrop(input_size),
-            transforms.ToTensor(),
-            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-        ]),
-    }
-    
-    print("Initializing Datasets and Dataloaders...")
-    return data_transforms
-
-
-def create_dataloaders(main_folder, data_transforms, subset_percentage=0.3, batch_size=8):
-    # Create training and validation datasets
-    image_datasets = {x: datasets.ImageFolder(os.path.join(main_folder, x), data_transforms[x]) for x in ['train', 'val', 'test']}
-
-    # Generate indices for the subset
-    subset_indices_train = torch.randperm(len(image_datasets['train']))[:int(subset_percentage * len(image_datasets['train']))]
-    subset_indices_val = torch.randperm(len(image_datasets['val']))[:int(subset_percentage * len(image_datasets['val']))]
-    subset_indices_test = torch.randperm(len(image_datasets['test']))[:int(subset_percentage * len(image_datasets['test']))]
-
-    # Create subsets
-    train_data_subset = torch.utils.data.Subset(image_datasets['train'], subset_indices_train)
-    val_data_subset = torch.utils.data.Subset(image_datasets['val'], subset_indices_val)
-    test_data_subset = torch.utils.data.Subset(image_datasets['test'], subset_indices_test)
-
-    # Create training and validation dataloaders
-    dataloaders_dict = {
-        'train': torch.utils.data.DataLoader(train_data_subset, batch_size=batch_size, shuffle=True, num_workers=4),
-        'val': torch.utils.data.DataLoader(val_data_subset, batch_size=batch_size, shuffle=True, num_workers=4),
-        'test': torch.utils.data.DataLoader(test_data_subset, batch_size=batch_size, shuffle=True, num_workers=4),
-    }
-
-    return  dataloaders_dict, image_datasets
-
-
-def create_dataloadersVIT(main_folder, data_transforms, subset_percentage=0.3, batch_size=8):
-    batch_size = 8
-
-    # Crear datasets de entrenamiento y validación
-    image_datasets = {x: datasets.ImageFolder(os.path.join(main_folder, x), data_transforms[x]) for x in ['train', 'val', 'test']}
-
-
-    # Generar los índices para el subconjunto
-    subset_indices_train = torch.randperm(len(image_datasets['train']))[:int(0.03*len(image_datasets['train']))]
-    subset_indices_val = torch.randperm(len(image_datasets['val']))[:int(0.03*len(image_datasets['val']))]
-
-    # Crear subconjuntos
-    train_data_subset = Subset(image_datasets['train'], subset_indices_train)
-    val_data_subset = Subset(image_datasets['val'], subset_indices_val)
-
-
-    # Crear dataloaders de entrenamiento y validación
-    dataloaders_dict = {
-        'train': DataLoader(train_data_subset, batch_size=batch_size, shuffle=True, num_workers=4),
-        'val': DataLoader(val_data_subset, batch_size=batch_size, shuffle=True, num_workers=4)
-    }
-
-    return dataloaders_dict, image_datasets
-
-def train_modelresnet(device, model, dataloaders, criterion, optimizer, num_epochs=25):
-    since = time.time()
-
-    acc_history = {"train": [], "val": []}
-    losses = {"train": [], "val": []}
-
-    # we will keep a copy of the best weights so far according to validation accuracy
-    best_model_wts = copy.deepcopy(model.state_dict())
-    best_acc = 0.0
-
-    for epoch in range(num_epochs):
-        print('Epoch {}/{}'.format(epoch, num_epochs - 1))
-        print('-' * 10)
-
-        # Each epoch has a training and validation phase
-        for phase in ['train', 'val']:
-            if phase == 'train':
-                model.train()  # Set model to training mode
-            else:
-                model.eval()   # Set model to evaluate mode
-
-            running_loss = 0.0
-            running_corrects = 0
-
-            # Iterate over data.
-            for inputs, labels in dataloaders[phase]:
-                inputs = inputs.to(device)
-                labels = labels.to(device)
-
-                # zero the parameter gradients
-                optimizer.zero_grad()
-
-                # forward
-                # track history if only in train
-                with torch.set_grad_enabled(phase == 'train'):
-                    # Get model outputs and calculate loss
-                    outputs = model(inputs)
-                    loss = criterion(outputs, labels)
-                    losses[phase].append(loss.item())
-
-                    _, preds = torch.max(outputs, 1)
-
-                    # backward + optimize only if in training phase
-                    if phase == 'train':
-                        loss.backward()
-                        optimizer.step()
-
-                # statistics
-                running_loss += loss.item() * inputs.size(0)
-                running_corrects += torch.sum(preds == labels.data).cpu().numpy()
-
-            epoch_loss = running_loss / len(dataloaders[phase].dataset)
-            epoch_acc = running_corrects / len(dataloaders[phase].dataset)
-
-            print('{} Loss: {:.4f} Acc: {:.4f}'.format(phase, epoch_loss, epoch_acc))
-
-            # deep copy the model
-            if phase == 'val' and epoch_acc > best_acc:
-                best_acc = epoch_acc
-                best_model_wts = copy.deepcopy(model.state_dict())
-            
-            acc_history[phase].append(epoch_acc)
-
-        print()
-
-    time_elapsed = time.time() - since
-    print('Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
-    print('Best val Acc: {:4f}'.format(best_acc))
-
-    # load best model weights
-    model.load_state_dict(best_model_wts)
-    return model, acc_history, losses
-
-def initialize_resnet(num_classes):
-    # Resnet18 
-    model = models.resnet18()
-    
-    model.fc = nn.Linear(512, num_classes)
-    
-    input_size = 224
-        
-    return model, input_size
-
-
-def initialize_mobilnet(num_classes):
-    # Resnet18 
-    model = models.mobilenet_v2(pretrained = True)
-    
-    # Modify the classifier to output a single value (0 or 1)
-    model.classifier = nn.Sequential(
-        nn.Dropout(0.2),
-        nn.Linear(1280, num_classes)
-    )
-    
-    input_size = 224
-        
-    return model, input_size
-
-
-
-def train_modelMOBILNET(device, model, dataloaders, criterion, optimizer, num_epochs=25):
-    since = time.time()
-
-    acc_history = {"train": [], "val": []}
-    losses = {"train": [], "val": []}
-
-    # we will keep a copy of the best weights so far according to validation accuracy
-    best_model_wts = copy.deepcopy(model.state_dict())
-    best_acc = 0.0
-
-    for epoch in range(num_epochs):
-        print('Epoch {}/{}'.format(epoch, num_epochs - 1))
-        print('-' * 10)
-
-        # Each epoch has a training and validation phase
-        for phase in ['train', 'val']:
-            if phase == 'train':
-                model.train()  # Set model to training mode
-            else:
-                model.eval()   # Set model to evaluate mode
-
-            running_loss = 0.0
-            running_corrects = 0
-
-            # Iterate over data.
-            for inputs, labels in dataloaders[phase]:
-                inputs = inputs.to(device)
-                labels = labels.to(device)
-
-                # zero the parameter gradients
-                optimizer.zero_grad()
-
-                # forward
-                # track history if only in train
-                with torch.set_grad_enabled(phase == 'train'):
-                    # Get model outputs and calculate loss
-                    outputs = model(inputs)
-                    loss = criterion(outputs, labels)
-                    losses[phase].append(loss.item())
-
-                    preds = torch.argmax(outputs, dim=1)
-                    
-                    # backward + optimize only if in training phase
-                    if phase == 'train':
-                        loss.backward()
-                        optimizer.step()
-
-                # statistics
-                running_loss += loss.item() * inputs.size(0)
-                running_corrects += torch.sum(preds == labels.data).item() #running_corrects += torch.sum(preds == labels.data).cpu().numpy()
-
-            epoch_loss = running_loss / len(dataloaders[phase].dataset)
-            epoch_acc = running_corrects / len(dataloaders[phase].dataset)
-
-            print('{} Loss: {:.4f} Acc: {:.4f}'.format(phase, epoch_loss, epoch_acc))
-
-            # deep copy the model
-            if phase == 'val' and epoch_acc > best_acc:
-                best_acc = epoch_acc
-                best_model_wts = copy.deepcopy(model.state_dict())
-            
-            acc_history[phase].append(epoch_acc)
-
-        print()
-
-    time_elapsed = time.time() - since
-    print('Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
-    print('Best val Acc: {:4f}'.format(best_acc))
-
-    # load best model weights
-    model.load_state_dict(best_model_wts)
-    return model, acc_history, losses
-
-def train_modelVit(device, model, dataloaders, criterion, optimizer, num_epochs=25):
-    since = time.time()
-
-    acc_history = {"train": [], "val": []}
-    losses = {"train": [], "val": []}
-
-    best_acc = 0.0
-    best_model_wts = None
-
-    for epoch in range(num_epochs):
-        print('Epoch {}/{}'.format(epoch, num_epochs - 1))
-        print('-' * 10)
-
-        for phase in ['train', 'val']:
-            if phase == 'train':
-                model.train()
-            else:
-                model.eval()
-
-            running_loss = 0.0
-            running_corrects = 0
-
-            for inputs, labels in dataloaders[phase]:
-                inputs = inputs.to(device)
-                labels = labels.to(device)
-
-                optimizer.zero_grad()
-
-                with torch.set_grad_enabled(phase == 'train'):
-                    outputs = model(inputs)
-                    _, preds = torch.max(outputs, 1)
-                    loss = criterion(outputs, labels)
-
-                    if phase == 'train':
-                        loss.backward()
-                        optimizer.step()
-
-                running_loss += loss.item() * inputs.size(0)
-                running_corrects += torch.sum(preds == labels.data).item()
-
-            epoch_loss = running_loss / len(dataloaders[phase].dataset)
-            epoch_acc = running_corrects / len(dataloaders[phase].dataset)
-
-            print('{} Loss: {:.4f} Acc: {:.4f}'.format(phase, epoch_loss, epoch_acc))
-
-            
-            if phase == 'val' and epoch_acc > best_acc:
-                best_acc = epoch_acc
-                best_model_wts = model.state_dict()
-                best_model_wts = copy.deepcopy(model.state_dict())
-
-            acc_history[phase].append(epoch_acc)
-            
-        print()
-
-    time_elapsed = time.time() - since
-    print('Training complete in {:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
-    print('Best val Acc: {:4f}'.format(best_acc))
-
-    model.load_state_dict(best_model_wts)
-    return model, acc_history, losses
