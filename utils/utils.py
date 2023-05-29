@@ -28,6 +28,7 @@ import copy
 import random
 from matplotlib.pyplot import subplots
 from torchvision import datasets, models, transforms
+from sklearn.metrics import classification_report
 
 
 
@@ -240,6 +241,20 @@ def evaluate_ontestset(X_test, y_test, batch_size, model, device, criterion):
     print('Test Loss: {:.4f}, Test Accuracy: {:.2f}%'.format(test_loss, test_accuracy))
     return test_loader
 
+def evaluate_ontestset2(X_test, y_test, batch_size, model, device, criterion):
+    test_dataset = TensorDataset(torch.from_numpy(X_test).float().permute(0, 3, 1, 2), torch.from_numpy(y_test).long())
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    test_loss, test_accuracy, y_true, y_pred = evaluate(model, device, test_loader, criterion)
+
+    print('Test Loss: {:.4f}, Test Accuracy: {:.2f}%'.format(test_loss, test_accuracy))
+
+    # Calculate recall and F1 score
+    recall = np.mean(y_true == y_pred)
+    f1_score = 2 * (test_accuracy * recall) / (test_accuracy + recall)
+
+    print('Test Recall: {:.4f}, Test F1 Score: {:.4f}'.format(recall, f1_score))
+    return test_loader
+
 def evaluate_ontestset_logits(X_test, y_test, batch_size, model, device, criterion):
     test_dataset = TensorDataset(torch.from_numpy(X_test).float().permute(0, 3, 1, 2), torch.from_numpy(y_test).float())
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
@@ -254,6 +269,9 @@ def evaluate_modelRESNET(device, criterion, model, dataloader):
     running_loss = 0.0
     running_corrects = 0
 
+    true_labels = []
+    pred_labels = []
+
     with torch.no_grad():
         for inputs, labels in dataloader:
             inputs = inputs.to(device)
@@ -266,8 +284,15 @@ def evaluate_modelRESNET(device, criterion, model, dataloader):
             _, preds = torch.max(outputs, 1)
             running_corrects += torch.sum(preds == labels.data).item()
 
+            true_labels.extend(labels.tolist())
+            pred_labels.extend(preds.tolist())
+
     loss = running_loss / len(dataloader.dataset)
     accuracy = running_corrects / len(dataloader.dataset)
+    
+    # Compute recall and F1 score
+    report = classification_report(true_labels, pred_labels)
+    print("Classification Report:\n", report)
 
     return loss, accuracy
 
