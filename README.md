@@ -42,12 +42,7 @@ The code has been structured in the following way:
 ## Example Code
 Before running the code you have to create a local environment with conda and activate it. The provided [environment.yml](https://github.com/DCC-UAB/XNAP-Project/environment.yml) file has all the required dependencies. Run the following command: ``conda env create --file environment.yml `` to create a conda environment with all the required dependencies and then activate it:
 ```
-conda activate xnap-example
-```
-
-To run the example code:
-```
-python main.py
+conda activate BreastCancerDetection_g12
 ```
 
 
